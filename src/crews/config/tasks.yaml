@@ -1,12 +1,12 @@
 match_records:
   description: |
-    Parse the raw CSV data provided below to match dividend records between NBIM and Custody systems.
+    IMPORTANT: You have access to raw CSV data through the crew inputs.
+    The CSV data is available as: {nbim_csv_data} and {custody_csv_data}
     
-    NBIM CSV DATA (semicolon-delimited):
-    {nbim_csv_data}
+    Parse the raw CSV data to match dividend records between NBIM and Custody systems.
     
-    CUSTODY CSV DATA (semicolon-delimited):
-    {custody_csv_data}
+    FIRST: Confirm you can access the CSV data by showing the first few lines of each file.
+    THEN: Parse the full datasets.
     
     YOUR TASK:
     1. Parse both CSV files manually (they use semicolon ; as delimiter)
@@ -39,7 +39,9 @@ match_records:
     
     DATES:
     - NBIM Ex Date: [EXDATE], Payment Date: [PAYMENT_DATE]
-    - Custody Ex Date: [EVENT_EX_DATE], Payment Date: [EVENT_PAYMENT_DATE]"
+    - Custody Ex Date: [EVENT_EX_DATE], Event Payment Date: [EVENT_PAYMENT_DATE], Actual Pay Date: [PAY_DATE]
+    - Payment Processing Delay: [PAY_DATE - EVENT_PAYMENT_DATE in days] days
+    - Delay Analysis: [If delay >0, note if due to international security or currency conversion (IS_CROSS_CURRENCY_REVERSAL)]"
     
     IMPORTANT: Parse CSV manually, maintain account-level granularity, preserve currencies.
   expected_output: "Account-level structured data parsed directly from raw CSV with original currencies preserved"
@@ -88,9 +90,9 @@ calculate_differences:
     
     Significance Thresholds:
     - CRITICAL: Position differences or >10% amount differences
-    - HIGH: >5% differences or >50,000 in major currencies
-    - MEDIUM: 2-5% differences or >10,000 in major currencies  
-    - LOW: <2% differences and <10,000 in major currencies
+    - HIGH: >5% differences or significant absolute amounts
+    - MEDIUM: 2-5% differences or moderate absolute amounts  
+    - LOW: <2% differences and minimal absolute amounts
   expected_output: "Precise currency-aware amount differences with account-level detail"
   agent: math_calculator
 
@@ -112,9 +114,9 @@ validate_positions:
     - CRITICAL MISMATCH: Position differences not explained by lending
     
     Special Focus:
-    - Nestle (970456789): Check individual account positions
-    - Samsung (960789012): Verify lending activity impact
-    - Apple (950123456): Confirm perfect position match
+    - Multi-account events: Check individual account positions for discrepancies
+    - Events with lending: Verify lending activity impact on positions
+    - Single account events: Confirm straightforward position matches
     
     Output format:
     "[Event Key] Position Validation:
@@ -137,10 +139,10 @@ analyze_tax_rates:
     3. Note: NBIM may have split tax structure (withholding + local)
     4. Calculate rate differences and financial impact
     
-    Special attention to known issues:
-    - Samsung (960789012): Expected 22% NBIM vs 20% Custody difference
-    - Check for treaty optimization opportunities
-    - Consider local tax components in NBIM data
+    Tax Analysis Focus:
+    - Identify withholding vs treaty rate differences >1%
+    - Check for treaty optimization opportunities  
+    - Consider local tax components in NBIM data vs single rates in custody data
     
     Tax Analysis Process:
     - Calculate total NBIM tax rate: (WTHTAX_COST_QUOTATION + LOCALTAX_COST_QUOTATION) / GROSS_AMOUNT_QUOTATION × 100
@@ -165,7 +167,7 @@ check_securities_lending:
     Using data from match_records analysis:
     1. Extract LOAN_QUANTITY and HOLDING_QUANTITY from custody CSV data
     2. Calculate lending percentages and treaty impact
-    3. Focus on known lending activity (Samsung expected to have 2,000 shares on loan)
+    3. Focus on identifying lending activity (any events with LOAN_QUANTITY > 0)
     4. Analyze tax efficiency implications
     
     Lending Analysis Process:
@@ -200,31 +202,41 @@ validate_fx_rates:
   description: |
     Validate FX rates and currency handling using CSV data from previous tasks.
     
+    CRITICAL: Understand the FX rate fields correctly:
+    - NBIM's AVG_FX_RATE_QUOTATION_TO_PORTFOLIO: Conversion rate from quotation currency to NOK (portfolio base currency)
+    - Custody's FX_RATE: Conversion rate for settlement currency conversion (if applicable)
+    - These are DIFFERENT rates serving different purposes - DO NOT compare them directly
+    
     Using currency data from match_records analysis:
     1. Extract QUOTATION_CURRENCY and SETTLEMENT_CURRENCY from NBIM data
     2. Extract CURRENCIES and SETTLED_CURRENCY from custody data
-    3. Compare FX rates: AVG_FX_RATE_QUOTATION_TO_PORTFOLIO vs FX_RATE
-    4. Check IS_CROSS_CURRENCY_REVERSAL flag for complex conversions
+    3. Analyze NBIM's AVG_FX_RATE_QUOTATION_TO_PORTFOLIO (quotation → NOK rate for portfolio reporting)
+    4. Analyze Custody's FX_RATE (operational rate for currency conversion if cross-currency)
+    5. Check IS_CROSS_CURRENCY_REVERSAL flag for complex conversions
     
-    Focus on known multi-currency events:
-    - Samsung (960789012): KRW to USD conversion with expected rates
-    - Apple (950123456): USD single currency (should be 1.0 rate)
-    - Nestle (970456789): CHF single currency (should be 1.0 rate)
+    FX Analysis approach:
+    - For NBIM: AVG_FX_RATE_QUOTATION_TO_PORTFOLIO is ALWAYS the rate to NOK, regardless of settlement currency
+      * This rate converts dividend amounts to NOK for portfolio-level reporting
+      * Rate magnitude depends on relative strength of quotation currency vs NOK
+      * DO NOT flag rates >1 or <1 as errors - they reflect actual currency relationships
+    - For Custody: FX_RATE applies only when CURRENCIES ≠ SETTLED_CURRENCY
+      * Single currency events: FX_RATE should be 1.0
+      * Cross-currency events: FX_RATE = actual conversion rate used for settlement
     
-    FX validation process:
-    - Single currency: Verify QUOTATION_CURRENCY = first part of CURRENCIES
-    - Multi-currency: Compare FX_RATE vs AVG_FX_RATE_QUOTATION_TO_PORTFOLIO
-    - Rate fairness: Differences >1% flag as EXCESSIVE
-    - Settlement consistency: Verify settlement currency alignment
+    Validation focus:
+    - DO NOT compare NBIM's portfolio reporting rate (to NOK) with Custody's settlement rate
+    - Verify settlement amount consistency within each system
+    - Check if cross-currency conversions are handled properly
+    - Validate that settlement currencies align between systems
     
     Output format:
     "[Event Key] FX Analysis:
-    - NBIM: [QUOTATION_CURRENCY] → [SETTLEMENT_CURRENCY] (Rate: [AVG_FX_RATE_QUOTATION_TO_PORTFOLIO])
-    - Custody: [CURRENCIES] → [SETTLED_CURRENCY] (Rate: [FX_RATE])
-    - Rate comparison: [rate_difference]% - [ACCEPTABLE/EXCESSIVE]
+    - NBIM Portfolio Reporting: [QUOTATION_CURRENCY] → NOK (Rate: [AVG_FX_RATE_QUOTATION_TO_PORTFOLIO])
+    - NBIM Settlement: [QUOTATION_CURRENCY] → [SETTLEMENT_CURRENCY]
+    - Custody Processing: [CURRENCIES] → [SETTLED_CURRENCY] (Rate: [FX_RATE])
     - Cross-currency reversal: [IS_CROSS_CURRENCY_REVERSAL]
-    - Currency consistency: [OK/ISSUES DETECTED]
-    - Settlement amounts: [comparison if applicable]"
+    - Settlement consistency: [Verify settlement amounts match within each system]
+    - Analysis: [Focus on settlement currency alignment and conversion methodology]"
   expected_output: "FX rate validation using CSV currency data"
   agent: fx_validator
 
@@ -250,12 +262,13 @@ assess_risk:
     - HIGH: >5% amount differences, significant tax rate differences (>2%)
     - MEDIUM: 2-5% differences, moderate lending impact (5-10%)
     - LOW: <2% differences, minimal operational impact
-    - PERFECT: All measures within tolerance (0.01%)
+    - PERFECT: All measures within acceptable tolerance
     
-    Special attention:
-    - Samsung: Expected HIGH priority (tax rates, lending, dates)
-    - Nestle: Expected CRITICAL priority (position mismatch)
-    - Apple: Expected PERFECT priority (no issues)
+    Priority Classification Guidelines:
+    - Events with position differences: CRITICAL priority
+    - Events with significant tax rate differences (>2%): HIGH priority
+    - Events with lending activity affecting tax efficiency: HIGH priority
+    - Events with perfect matches across all metrics: PERFECT priority
     
     Output format:
     "[Event Key] Priority: [LEVEL]
