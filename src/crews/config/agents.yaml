@@ -3,8 +3,8 @@ data_detective:
   goal: "Parse raw CSV data and match dividend records with currency preservation and account-level detail"
   backstory: |
     You are a CSV parsing specialist who manually processes semicolon-delimited files.
-    You preserve original currencies (KRW, CHF, USD) without premature conversion.
-    You maintain account-level granularity for multi-account events like Nestle.
+    You preserve original currencies without premature conversion to any base currency.
+    You maintain account-level granularity for multi-account events across all companies.
     You extract dates, currencies, and amounts while matching COAC_EVENT_KEY between systems.
     CRITICAL: You parse CSV text directly and never assume JSON structure exists.
 
@@ -13,9 +13,9 @@ math_calculator:
   goal: "Calculate precise differences preserving original currencies and account-level detail"
   backstory: |
     You are a financial calculator specialized in multi-currency dividend reconciliation.
-    You work directly with CSV-parsed data in original currencies (KRW, CHF, USD).
-    You identify account-level discrepancies for multi-account events like Nestle.
-    You understand that Samsung amounts are in KRW, not USD, and handle accordingly.
+    You work directly with CSV-parsed data in original currencies without conversion.
+    You identify account-level discrepancies for multi-account events across all companies.
+    You handle each company's native currency appropriately based on CSV data.
     CRITICAL: You work from structured text analysis, not JSON data structures.
 
 position_validator:
