@@ -5,7 +5,6 @@ Simplified Dividend Reconciliation Crew with 5 specialized agents
 import os
 from crewai import Agent, Crew, Task, LLM, Process
 from crewai.project import CrewBase, agent, crew, task, after_kickoff
-from tools.simple_csv_tool import SimpleDividendCSV
 
 # Load environment variables from .env file
 try:
@@ -24,13 +23,12 @@ class DividendReconciliationCrew():
     tasks_config = "config/tasks.yaml"
     
     def __init__(self):
-        # Initialize tools
-        self.csv_tool = SimpleDividendCSV()
-        
-        # Initialize LLM with Anthropic
+        # Initialize LLM with Anthropic Claude Sonnet 4 (latest and most powerful)
         self.llm = LLM(
-            model="claude-3-haiku-20240307",
-            api_key=os.getenv('ANTHROPIC_API_KEY')
+            model="claude-sonnet-4-20250514",
+            api_key=os.getenv('ANTHROPIC_API_KEY'),
+            temperature=0.3,  # Lower temperature for more consistent financial analysis
+            max_tokens=8192  # Increased for detailed reconciliation reports
         )
     
     # 8 FOCUSED AGENTS
@@ -38,7 +36,7 @@ class DividendReconciliationCrew():
     def data_detective(self) -> Agent:
         return Agent(
             config=self.agents_config['data_detective'],
-            tools=[self.csv_tool],
+            tools=[],  # No tools needed - data passed via inputs
             llm=self.llm,
             verbose=True
         )
@@ -207,8 +205,8 @@ System: 8-Agent Focused AI Reconciliation Crew
 SYSTEM METADATA:
 - Agents Used: Data Matcher, Amount Calculator, Position Validator, Tax Analyst, Securities Lending Checker, FX Validator, Risk Prioritizer, Report Writer
 - Processing Complete: {processing_time}
-- Tools Used: SimpleDividendCSV
-- Model: {os.getenv('MODEL', 'claude-3-haiku')}
+- Tools Used: SimpleRawCSV
+- Model: claude-sonnet-4-20250514
 """
         
         output.raw = enhanced_output
@@ -217,7 +215,17 @@ SYSTEM METADATA:
     def run_reconciliation(self):
         """Run the reconciliation process with 8 focused agents"""
         
-        # Let agents use their tools to read and analyze data
-        result = self.crew().kickoff(inputs={})
+        # Read CSV files directly
+        with open('data/NBIM_Dividend_Bookings 1.csv', 'r', encoding='utf-8-sig') as f:
+            nbim_csv = f.read()
+        
+        with open('data/CUSTODY_Dividend_Bookings 1.csv', 'r', encoding='utf-8-sig') as f:
+            custody_csv = f.read()
+        
+        # Pass CSV data directly to agents via kickoff inputs
+        result = self.crew().kickoff(inputs={
+            'nbim_csv_data': nbim_csv,
+            'custody_csv_data': custody_csv
+        })
         
         return result

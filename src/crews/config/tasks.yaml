@@ -1,202 +1,334 @@
 match_records:
   description: |
-    Use simple_dividend_csv tool to read both CSV files:
-    - data/NBIM_Dividend_Bookings 1.csv
-    - data/CUSTODY_Dividend_Bookings 1.csv
+    IMPORTANT: You have access to raw CSV data through the crew inputs.
+    The CSV data is available as: {nbim_csv_data} and {custody_csv_data}
     
-    CRITICAL: For events with multiple records (same COAC_EVENT_KEY), aggregate them:
+    Parse the raw CSV data to match dividend records between NBIM and Custody systems.
     
-    For each unique COAC_EVENT_KEY:
-    1. Sum NBIM amounts by currency: GROSS_AMOUNT_QUOTATION, NET_AMOUNT_QUOTATION, WTHTAX_COST_QUOTATION
-    2. Sum NBIM shares: NOMINAL_BASIS (total across all records for this event)
-    3. Sum Custody amounts by original currency: GROSS_AMOUNT, NET_AMOUNT_QC, TAX  
-    4. Sum Custody shares: NOMINAL_BASIS (total across all records)
-    5. Extract rates: WTHTAX_RATE (NBIM) vs TAX_RATE (Custody)
-    6. Note securities lending: LOAN_QUANTITY, HOLDING_QUANTITY, LENDING_PERCENTAGE
+    FIRST: Confirm you can access the CSV data by showing the first few lines of each file.
+    THEN: Parse the full datasets.
     
-    Output format: 
-    "[Event Key] Company: [Name]
-    NBIM Totals: Gross=[Amount Currency], Net=[Amount Currency], Tax=[Amount Currency], Shares=[Total]
-    Custody Totals: Gross=[Amount Currency], Net=[Amount Currency], Tax=[Amount Currency], Shares=[Total]
-    Lending: [LOAN_QUANTITY] on loan of [HOLDING_QUANTITY] total ([LENDING_PERCENTAGE]%)"
-  expected_output: "Properly aggregated data for each unique event with currency consistency"
+    YOUR TASK:
+    1. Parse both CSV files manually (they use semicolon ; as delimiter)
+    2. Extract headers and data rows from each file
+    3. Group NBIM records by COAC_EVENT_KEY (preserve individual accounts)
+    4. Group Custody records by COAC_EVENT_KEY (preserve individual accounts)
+    5. For events with multiple rows - PRESERVE ACCOUNT-LEVEL DETAIL:
+       - List each account separately with its amounts and currencies
+       - Calculate totals but show individual account breakdowns
+       - Identify which specific accounts have discrepancies
+    6. Match events between NBIM and Custody using COAC_EVENT_KEY
+    
+    CRITICAL: PRESERVE ORIGINAL CURRENCIES - DO NOT CONVERT TO USD
+    
+    Output format for each event (multi-account example):
+    "[Event Key] Company: [ORGANISATION_NAME] - Currency: [QUOTATION_CURRENCY]
+    
+    NBIM ACCOUNTS:
+    - Account [row#]: Gross=[GROSS_AMOUNT_QUOTATION] [currency], Net=[NET_AMOUNT_QUOTATION] [currency], Shares=[NOMINAL_BASIS]
+    - NBIM TOTAL: Gross=[sum] [currency], Net=[sum] [currency], Tax=[sum of WTHTAX_COST_QUOTATION] [currency], Shares=[sum]
+    
+    CUSTODY ACCOUNTS:  
+    - Account [CUSTODY]: Gross=[GROSS_AMOUNT] [currency], Net=[NET_AMOUNT_QC] [currency], Shares=[NOMINAL_BASIS], Lending=[LOAN_QUANTITY]
+    - CUSTODY TOTAL: Gross=[sum] [currency], Net=[sum] [currency], Tax=[sum of TAX] [currency], Shares=[sum], Total Lending=[sum of LOAN_QUANTITY]
+    
+    CURRENCY INFO:
+    - NBIM: [QUOTATION_CURRENCY] → [SETTLEMENT_CURRENCY] (FX Rate: [AVG_FX_RATE_QUOTATION_TO_PORTFOLIO])
+    - Custody: [CURRENCIES] → [SETTLED_CURRENCY] (FX Rate: [FX_RATE])
+    - Cross-currency: [IS_CROSS_CURRENCY_REVERSAL]
+    
+    DATES:
+    - NBIM Ex Date: [EXDATE], Payment Date: [PAYMENT_DATE]
+    - Custody Ex Date: [EVENT_EX_DATE], Event Payment Date: [EVENT_PAYMENT_DATE], Actual Pay Date: [PAY_DATE]
+    - Payment Processing Delay: [PAY_DATE - EVENT_PAYMENT_DATE in days] days
+    - Delay Analysis: [If delay >0, note if due to international security or currency conversion (IS_CROSS_CURRENCY_REVERSAL)]"
+    
+    IMPORTANT: Parse CSV manually, maintain account-level granularity, preserve currencies.
+  expected_output: "Account-level structured data parsed directly from raw CSV with original currencies preserved"
   agent: data_detective
 
 calculate_differences:
   description: |
-    CRITICAL: Convert amounts to common currency before comparison when currencies differ.
+    Using the parsed account-level data from the previous task, calculate precise amount differences.
     
-    Using aggregated data from previous task, for each COAC_EVENT_KEY:
+    CRITICAL: Work in ORIGINAL CURRENCIES - do not convert to USD prematurely.
     
-    1. Check if currencies match between NBIM and Custody totals
-    2. If currencies match, calculate differences directly:
-       - Gross: Custody Total - NBIM Total = difference
-       - Net: Custody Total - NBIM Total = difference  
-       - Tax: Custody Total - NBIM Total = difference
-       - Percentage: (difference ÷ NBIM amount) × 100
-    3. If currencies don't match, convert to common currency using available FX rates:
-       - Use NBIM FX rate or Custody FX rate (whichever available)
-       - Convert NBIM amounts to USD or Custody amounts to local currency
-       - Then calculate differences as above
-       - Note which FX rate was used for transparency
-    4. Only flag as "CURRENCY MISMATCH" if no FX rate available for conversion
+    For each event that was matched:
+    1. Calculate differences between NBIM and Custody TOTAL amounts (preserve currency)
+    2. Calculate percentage differences using original amounts
+    3. For multi-account events, identify which specific accounts have discrepancies
+    4. Handle currency-specific calculations properly
     
-    Output format: 
-    "[Event] Currency: [CCY] (converted using [rate source] FX rate: [rate])
-    Gross: Custody [Amount] - NBIM [Amount] = [+/-Difference] ([Y%])
-    Net: Custody [Amount] - NBIM [Amount] = [+/-Difference] ([Y%]) 
-    Tax: Custody [Amount] - NBIM [Amount] = [+/-Difference] ([Y%])"
-  expected_output: "Currency-consistent calculations with clear difference identification"
+    Currency-Aware Calculations:
+    - Same currency events: Direct subtraction (CHF - CHF, USD - USD)
+    - Cross-currency events: Note currency difference, calculate in both currencies
+    - Multi-currency: Show settlement currency amounts for comparison
+    
+    Account-Level Analysis (for multi-account events like Nestle):
+    - Compare each NBIM account vs corresponding Custody account
+    - Identify specific accounts with mismatches
+    - Calculate per-account differences before totaling
+    
+    Enhanced Output Format:
+    "[Event Key] Company: [company name] - Base Currency: [currency]
+    
+    ACCOUNT-LEVEL DIFFERENCES (if multi-account):
+    - Account [ID]: NBIM [amount] [currency] vs Custody [amount] [currency] = [diff] [currency]
+    
+    TOTAL DIFFERENCES:
+    - Gross: NBIM [total] [currency] vs Custody [total] [currency] = [difference] [currency] ([percentage]%)
+    - Net: NBIM [total] [currency] vs Custody [total] [currency] = [difference] [currency] ([percentage]%)  
+    - Tax: NBIM [total] [currency] vs Custody [total] [currency] = [difference] [currency] ([percentage]%)
+    - Position: NBIM [shares] vs Custody [shares] = [difference] shares
+    
+    CURRENCY ANALYSIS:
+    - NBIM Currency: [QUOTATION_CURRENCY] → [SETTLEMENT_CURRENCY]
+    - Custody Currency: [CURRENCIES] → [SETTLED_CURRENCY]  
+    - Settlement Amounts: NBIM [settlement_amount] vs Custody [settlement_amount] = [diff] (if different currencies)
+    
+    SIGNIFICANCE: [CRITICAL/HIGH/MEDIUM/LOW based on amounts and percentages]"
+    
+    Significance Thresholds:
+    - CRITICAL: Position differences or >10% amount differences
+    - HIGH: >5% differences or significant absolute amounts
+    - MEDIUM: 2-5% differences or moderate absolute amounts  
+    - LOW: <2% differences and minimal absolute amounts
+  expected_output: "Precise currency-aware amount differences with account-level detail"
   agent: math_calculator
 
 validate_positions:
   description: |
-    Compare share quantities and validate securities lending accounting:
+    Validate share positions using the parsed data from previous tasks.
     
-    For each COAC_EVENT_KEY:
-    1. Compare total positions: NBIM NOMINAL_BASIS vs Custody (HOLDING_QUANTITY + LOAN_QUANTITY)
-    2. Validate lending math: Does HOLDING_QUANTITY + LOAN_QUANTITY = total position?
-    3. Calculate dividend-receiving shares: HOLDING_QUANTITY (shares actually held)
-    4. Only flag as CRITICAL if total positions don't match after accounting for lending
+    Using the account-level data from match_records and calculate_differences:
+    1. Extract total NBIM and Custody share positions from previous analysis
+    2. Check for exact matches in NOMINAL_BASIS fields
+    3. For custody data, analyze LOAN_QUANTITY and HOLDING_QUANTITY fields:
+       - Verify: HOLDING_QUANTITY + LOAN_QUANTITY = total custody position
+       - Calculate lending percentage: LOAN_QUANTITY / total position × 100
+    4. Identify account-level position mismatches (especially Nestle)
     
-    CRITICAL UNDERSTANDING: Securities lending means:
-    - HOLDING_QUANTITY = shares physically held (receive dividends)
-    - LOAN_QUANTITY = shares lent out (borrower receives dividends)
-    - TOTAL = HOLDING_QUANTITY + LOAN_QUANTITY should match NBIM NOMINAL_BASIS
+    Position validation rules based on CSV data:
+    - MATCH: NBIM NOMINAL_BASIS = Custody NOMINAL_BASIS (total)
+    - MATCH WITH LENDING: Positions match but lending affects dividend treatment
+    - CRITICAL MISMATCH: Position differences not explained by lending
     
-    Output format: 
-    "[Event] Position Validation:
-    - NBIM Total: [NOMINAL_BASIS] shares
-    - Custody Total: [HOLDING_QUANTITY] held + [LOAN_QUANTITY] on loan = [sum] total
+    Special Focus:
+    - Multi-account events: Check individual account positions for discrepancies
+    - Events with lending: Verify lending activity impact on positions
+    - Single account events: Confirm straightforward position matches
+    
+    Output format:
+    "[Event Key] Position Validation:
+    - NBIM Total: [total NOMINAL_BASIS] shares
+    - Custody Total: [total NOMINAL_BASIS] shares
+    - Account Breakdown: [list individual accounts if multi-account]
+    - Lending Activity: [LOAN_QUANTITY] shares ([percentage]%) on loan
     - Status: MATCH/CRITICAL MISMATCH
-    - Lending Impact: [LOAN_QUANTITY] shares ([%]) not receiving beneficial dividend treatment"
-  expected_output: "Comprehensive position analysis including lending impact on dividend entitlement"
+    - Impact: [description of dividend treatment impact]"
+  expected_output: "Position validation using CSV-based account analysis"
   agent: position_validator
 
 analyze_tax_rates:
   description: |
-    Compare tax rates and identify treaty optimization opportunities:
+    Compare tax rates using the parsed CSV data from previous tasks.
     
-    For each event:
-    1. Extract tax rates: NBIM WTHTAX_RATE vs Custody TAX_RATE
-    2. Calculate financial impact of rate differences on total dividend
-    3. Flag differences >1% as potential treaty opportunities
-    4. Identify which system achieves better tax treatment
-    5. Assess if NBIM could benefit from custody's approach
+    Using data from match_records and calculate_differences:
+    1. Extract NBIM tax rates from WTHTAX_RATE and LOCALTAX_COST_QUOTATION fields
+    2. Extract Custody tax rates from TAX_RATE field
+    3. Note: NBIM may have split tax structure (withholding + local)
+    4. Calculate rate differences and financial impact
     
-    Output format: "[Event] Tax Analysis:
-    - NBIM Rate: X% vs Custody Rate: Y% (difference: Z%)
-    - Financial Impact: [amount] extra tax paid by higher rate system
-    - Treaty Opportunity: [YES/NO] - [explanation]
-    - Recommendation: [action to optimize tax treatment]"
-  expected_output: "Tax rate comparison identifying potential treaty issues or rate errors"
+    Tax Analysis Focus:
+    - Identify withholding vs treaty rate differences >1%
+    - Check for treaty optimization opportunities  
+    - Consider local tax components in NBIM data vs single rates in custody data
+    
+    Tax Analysis Process:
+    - Calculate total NBIM tax rate: (WTHTAX_COST_QUOTATION + LOCALTAX_COST_QUOTATION) / GROSS_AMOUNT_QUOTATION × 100
+    - Compare with Custody TAX_RATE
+    - Calculate financial impact: gross_amount × (rate_difference / 100)
+    
+    Output format:
+    "[Event Key] Tax Analysis:
+    - NBIM Rate: [total_tax_rate]% (WHT: [WTHTAX_RATE]% + Local: [local_rate]%)
+    - Custody Rate: [TAX_RATE]%
+    - Rate Difference: [calculated_diff]%
+    - Financial Impact: [amount] [currency] potential savings/cost
+    - Treaty Opportunity: YES/NO (>1% difference threshold)
+    - Recommendation: [specific action based on analysis]"
+  expected_output: "Tax rate comparison using CSV data with treaty optimization analysis"
   agent: tax_analyst
 
 check_securities_lending:
   description: |
-    Analyze securities lending impact on dividend tax efficiency:
+    Analyze securities lending impact using CSV data from previous tasks.
     
-    For each event with lending (LOAN_QUANTITY > 0):
-    1. Calculate lending impact: LOAN_QUANTITY / HOLDING_QUANTITY = lending %  
-    2. Determine shares receiving beneficial tax treatment: HOLDING_QUANTITY - LOAN_QUANTITY
-    3. Calculate tax loss: Lending % × Total Dividend × (Standard Rate - Treaty Rate)
-    4. Assess if lending destroys tax efficiency
+    Using data from match_records analysis:
+    1. Extract LOAN_QUANTITY and HOLDING_QUANTITY from custody CSV data
+    2. Calculate lending percentages and treaty impact
+    3. Focus on identifying lending activity (any events with LOAN_QUANTITY > 0)
+    4. Analyze tax efficiency implications
     
-    For events with no lending:
-    - Report "No lending detected - full tax treaty benefits available"
+    Lending Analysis Process:
+    - Check custody LOAN_QUANTITY field for each account
+    - Calculate total lending: sum of all LOAN_QUANTITY values
+    - Verify equation: HOLDING_QUANTITY + LOAN_QUANTITY = NOMINAL_BASIS
+    - Calculate lending percentage: LOAN_QUANTITY / NOMINAL_BASIS × 100
+    
+    Tax efficiency impact assessment:
+    - Extract dividend per share from DIVIDENDS_PER_SHARE (NBIM)
+    - Calculate potential tax cost of lending based on rate differences
+    - Estimate foregone treaty benefits
+    
+    Tax efficiency impact levels:
+    - OPTIMAL: No lending (0%)
+    - LOW: <5% on loan
+    - MEDIUM: 5-10% on loan
+    - HIGH: >10% on loan
     
     Output format:
-    "[Event] Lending Analysis:
-    - Shares on loan: [LOAN_QUANTITY] of [HOLDING_QUANTITY] ([X%])
-    - Shares with treaty benefits: [HOLDING_QUANTITY - LOAN_QUANTITY] ([effective %])
-    - Tax efficiency impact: [HIGH/MEDIUM/LOW] - [explanation]
-    - Estimated tax cost of lending: [calculation if possible]"
-  expected_output: "Detailed lending impact on tax efficiency and dividend entitlement"
+    "[Event Key] Lending Analysis:
+    - Total Position: [NOMINAL_BASIS] shares
+    - Shares on loan: [LOAN_QUANTITY] ([lending_percentage]%)
+    - Shares with treaty benefits: [HOLDING_QUANTITY] ([effective_coverage]%)
+    - Tax efficiency impact: [OPTIMAL/LOW/MEDIUM/HIGH]
+    - Estimated treaty cost: [calculation if applicable] [currency]
+    - Recommendation: [lending strategy advice]"
+  expected_output: "Securities lending impact analysis using CSV lending data"
   agent: securities_lending_checker
 
 validate_fx_rates:
   description: |
-    Validate FX rates and currency conversion consistency:
+    Validate FX rates and currency handling using CSV data from previous tasks.
     
-    For each event, check currency handling:
-    1. Single currency events (USD/USD, CHF/CHF): Verify no FX conversion needed
-    2. Multi-currency events: Extract and compare FX rates from both systems
-    3. Cross-currency settlements: Validate conversion accuracy
-    4. Flag significant rate differences that could indicate unfavorable pricing
+    CRITICAL: Understand the FX rate fields correctly:
+    - NBIM's AVG_FX_RATE_QUOTATION_TO_PORTFOLIO: Conversion rate from quotation currency to NOK (portfolio base currency)
+    - Custody's FX_RATE: Conversion rate for settlement currency conversion (if applicable)
+    - These are DIFFERENT rates serving different purposes - DO NOT compare them directly
+    
+    Using currency data from match_records analysis:
+    1. Extract QUOTATION_CURRENCY and SETTLEMENT_CURRENCY from NBIM data
+    2. Extract CURRENCIES and SETTLED_CURRENCY from custody data
+    3. Analyze NBIM's AVG_FX_RATE_QUOTATION_TO_PORTFOLIO (quotation → NOK rate for portfolio reporting)
+    4. Analyze Custody's FX_RATE (operational rate for currency conversion if cross-currency)
+    5. Check IS_CROSS_CURRENCY_REVERSAL flag for complex conversions
+    
+    FX Analysis approach:
+    - For NBIM: AVG_FX_RATE_QUOTATION_TO_PORTFOLIO is ALWAYS the rate to NOK, regardless of settlement currency
+      * This rate converts dividend amounts to NOK for portfolio-level reporting
+      * Rate magnitude depends on relative strength of quotation currency vs NOK
+      * DO NOT flag rates >1 or <1 as errors - they reflect actual currency relationships
+    - For Custody: FX_RATE applies only when CURRENCIES ≠ SETTLED_CURRENCY
+      * Single currency events: FX_RATE should be 1.0
+      * Cross-currency events: FX_RATE = actual conversion rate used for settlement
+    
+    Validation focus:
+    - DO NOT compare NBIM's portfolio reporting rate (to NOK) with Custody's settlement rate
+    - Verify settlement amount consistency within each system
+    - Check if cross-currency conversions are handled properly
+    - Validate that settlement currencies align between systems
     
     Output format:
-    "[Event] FX Analysis:
-    - Currency pair: [NBIM currency] to [Settlement currency]  
-    - NBIM rate: [rate if applicable]
-    - Custody rate: [rate if applicable]
-    - Rate difference: [X%] - [ACCEPTABLE/EXCESSIVE] 
-    - Currency consistency: [OK/ISSUES DETECTED]"
-  expected_output: "Comprehensive FX validation with currency conversion analysis"
+    "[Event Key] FX Analysis:
+    - NBIM Portfolio Reporting: [QUOTATION_CURRENCY] → NOK (Rate: [AVG_FX_RATE_QUOTATION_TO_PORTFOLIO])
+    - NBIM Settlement: [QUOTATION_CURRENCY] → [SETTLEMENT_CURRENCY]
+    - Custody Processing: [CURRENCIES] → [SETTLED_CURRENCY] (Rate: [FX_RATE])
+    - Cross-currency reversal: [IS_CROSS_CURRENCY_REVERSAL]
+    - Settlement consistency: [Verify settlement amounts match within each system]
+    - Analysis: [Focus on settlement currency alignment and conversion methodology]"
+  expected_output: "FX rate validation using CSV currency data"
   agent: fx_validator
 
 assess_risk:
   description: |
-    Prioritize findings using multiple risk factors:
+    Prioritize findings using data from all previous CSV-based analyses.
     
-    For each event, evaluate ALL risk factors:
-    1. Financial impact: Amount differences and percentages
-    2. Position mismatches: Share quantity differences (CRITICAL - invalidates all calculations)
-    3. Securities lending: Tax efficiency destruction
-    4. Currency issues: FX rate problems or currency mismatches
-    5. Tax optimization: Missed treaty opportunities
+    Using consolidated findings from:
+    - calculate_differences: Amount discrepancies and percentages
+    - validate_positions: Share position issues
+    - analyze_tax_rates: Tax optimization opportunities
+    - check_securities_lending: Lending impact assessment
+    - validate_fx_rates: Currency handling issues
     
-    Priority assignment (use HIGHEST applicable):
-    - CRITICAL: TRUE position mismatches after accounting for securities lending, currency comparison errors
-    - HIGH: >$100,000 differences, >5% differences, tax rate differences >2%, significant lending impact
-    - MEDIUM: $10,000-$100,000 differences, 2-5% differences, tax rate differences 1-2%
-    - LOW: <$10,000 differences, <2% differences, minor lending activity
-    - PERFECT: No differences and no issues detected
+    Risk assessment criteria based on CSV analysis:
+    1. Financial materiality: Currency amounts and percentages from calculations
+    2. Position integrity: Share mismatches from position validation
+    3. Operational impact: Date discrepancies, lending effects, FX issues
+    4. Tax efficiency: Treaty optimization potential
     
-    IMPORTANT: Securities lending where HOLDING_QUANTITY + LOAN_QUANTITY = NBIM total is NOT a position mismatch
+    Priority levels based on CSV findings:
+    - CRITICAL: Position differences, major date discrepancies (>5 days)
+    - HIGH: >5% amount differences, significant tax rate differences (>2%)
+    - MEDIUM: 2-5% differences, moderate lending impact (5-10%)
+    - LOW: <2% differences, minimal operational impact
+    - PERFECT: All measures within acceptable tolerance
     
-    Output format: 
-    "[Event] Priority: [LEVEL] - Drivers: [list key issues]
-    Financial: [largest amount/% difference]
-    Operational: [position/lending/FX issues]
-    Action required: [immediate/planned/monitoring]"
-  expected_output: "Comprehensive risk assessment considering all factors including lending and positions"
+    Priority Classification Guidelines:
+    - Events with position differences: CRITICAL priority
+    - Events with significant tax rate differences (>2%): HIGH priority
+    - Events with lending activity affecting tax efficiency: HIGH priority
+    - Events with perfect matches across all metrics: PERFECT priority
+    
+    Output format:
+    "[Event Key] Priority: [LEVEL]
+    Drivers: [Specific findings that drove this priority]
+    - Financial Impact: [amount differences and percentages]
+    - Position Issues: [share differences]
+    - Operational Issues: [dates, lending, FX]
+    - Tax Optimization: [treaty opportunities]
+    Action required: [immediate/planned/monitoring with timeline]"
+  expected_output: "Risk prioritization based on comprehensive CSV analysis findings"
   agent: risk_prioritizer
 
 write_report:
   description: |
-    Create a comprehensive executive report using ALL previous agent outputs.
+    Create comprehensive executive report synthesizing all CSV-based analysis findings.
     
-    Extract and use the ACTUAL data from all previous task results.
+    Consolidate findings from all previous tasks:
+    - match_records: Event matching and account details
+    - calculate_differences: Amount discrepancies in original currencies
+    - validate_positions: Share position validation
+    - analyze_tax_rates: Tax optimization opportunities
+    - check_securities_lending: Lending impact analysis
+    - validate_fx_rates: Currency handling validation
+    - assess_risk: Priority classification
     
-    REQUIRED STRUCTURE:
+    REQUIRED REPORT STRUCTURE:
     
-    EXECUTIVE SUMMARY:
-    - Total events processed: [COUNT from previous results]
-    - Events by status: [COUNT PERFECT vs COUNT with breaks]
-    - Priority breakdown: [PERFECT: X, HIGH: Y, MEDIUM: Z, LOW: W from risk assessment]
+    # EXECUTIVE SUMMARY
+    - Total dividend events analyzed: [count from CSV parsing]
+    - Perfect matches: [events with no discrepancies]
+    - Events with discrepancies: [events requiring attention]
+    - Critical issues requiring immediate action: [count]
     
-    DETAILED FINDINGS:
-    For EACH event found in previous results, extract actual data:
-    [Event ID] Company: [Company name from data matching results]
-    - Gross Amount: NBIM [amount] vs Custody [amount] = [difference] ([percentage]%)
-    - Net Amount: NBIM [amount] vs Custody [amount] = [difference] ([percentage]%)  
-    - Tax Amount: NBIM [amount] vs Custody [amount] = [difference] ([percentage]%)
-    - Position Status: NBIM [shares] vs Custody [shares] - [MATCH/MISMATCH]
-    - Securities Lending: [loan quantity] shares ([percentage]%) on loan
-    - Tax Rates: NBIM [rate]% vs Custody [rate]% (difference: [diff]%)
-    - Priority: [level from risk assessment] - [specific reasons from risk assessment]
+    # DETAILED FINDINGS
+    For each event, synthesize from all analyses:
+    "**[Event Key] Company: [ORGANISATION_NAME]**
+    - Currency: [original currency preserved]
+    - Amounts: NBIM vs Custody differences with percentages
+    - Positions: Share reconciliation status
+    - Dates: Payment/ex-date validation results
+    - Tax Analysis: Rate differences and treaty opportunities
+    - Securities Lending: Impact on tax efficiency
+    - FX Rates: Currency handling validation
+    - Risk Priority: [from risk assessment]
+    - Account Details: [if multi-account event]"
     
-    FINANCIAL IMPACT SUMMARY:
-    - Total value of discrepancies: [calculate sum from all differences found]
-    - Largest single discrepancy: [identify from differences calculated]
-    - Tax optimization opportunities: [extract from tax analysis results]
+    # FINANCIAL IMPACT SUMMARY
+    - Material discrepancies by currency
+    - Tax optimization potential
+    - Securities lending cost analysis
     
-    ACTIONABLE RECOMMENDATIONS:
-    HIGH PRIORITY ACTIONS:
-    - [Extract specific recommendations from risk assessment for HIGH priority events]
-    MEDIUM PRIORITY ACTIONS:
-    - [Extract specific recommendations from risk assessment for MEDIUM priority events]
+    # CRITICAL ISSUES
+    List all CRITICAL priority items with:
+    - Root cause analysis
+    - Financial impact
+    - Required actions
     
-    Parse the previous agent outputs to extract all actual data, amounts, company names, and recommendations.
-  expected_output: "Comprehensive report with specific metrics extracted from all previous agent findings"
+    # ACTIONABLE RECOMMENDATIONS
+    Prioritized action items with timelines and ownership.
+    
+    IMPORTANT: Preserve original currencies throughout report. Synthesize from all task outputs.
+  expected_output: "Comprehensive executive report based on complete CSV analysis"
   agent: report_writer
