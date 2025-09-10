@@ -1,76 +1,66 @@
 # NBIM Dividend Reconciliation System
 
-**LLM-Powered Automated Dividend Reconciliation**
+**AI-Powered Multi-Agent System for Financial Reconciliation**
 
-A solution for automating NBIM's dividend reconciliation process using CrewAI agents powered by Claude Sonnet.
+An intelligent reconciliation system using CrewAI's multi-agent framework to automate dividend payment validation between NBIM and custodian records.
 
-## Overview
+## 📌 The Challenge
 
-This system addresses NBIM's challenge of reconciling 8,000+ annual dividend events between internal systems and global custodians. It uses AI agents to detect discrepancies, classify risks, and propose solutions.
+NBIM processes ~8,000 dividend events annually across 9,000+ equity holdings. Daily reconciliation between internal systems and global custodians is time-consuming and error-prone. This project explores how LLMs can transform this workflow through intelligent automation.
 
-## Architecture
-
-```
-src/
-├── core/                    # Core reconciliation logic
-│   ├── models.py           # Data models and types
-│   └── reconciliation_engine.py  # Break detection engine
-├── agents/                 # AI agents for analysis
-│   └── dividend_agents.py  # CrewAI agent definitions
-├── tools/                  # Utility functions
-│   └── data_formatter.py   # Data formatting for agents
-└── main.py                 # Main application entry point
-
-tests/                      # Test files
-data/                       # Sample dividend CSV files
-```
-
-## Key Components
-
-### Core Reconciliation Engine
-- Loads NBIM and custodian dividend data
-- Detects discrepancies in amounts, dates, tax rates
-- Classifies breaks by severity and financial impact
-
-### AI Agents
-- **Detective Agent**: Analyzes breaks with market expertise
-- **Classifier Agent**: Assesses risk and prioritizes issues  
-- **Resolver Agent**: Proposes specific solutions
-
-### Sample Results
-The system successfully identifies real discrepancies in sample data:
-- Samsung event: 4 breaks including $450K net amount difference
-- Apple event: Perfect reconciliation 
-- Nestle event: Minor amount variations
-
-## Setup
+## 🚀 Quick Start
 
 ```bash
-# Install dependencies
+# Install uv package manager
+curl -LsSf https://astral.sh/uv/install.sh | sh
+
+# Clone and setup
+git clone https://github.com/kirstenord/nbim-case-project.git
+cd nbim-case-project
 uv sync
 
-# Configure API key (optional)
-echo "ANTHROPIC_API_KEY=your_key_here" >> .env
+# Configure API key
+echo "ANTHROPIC_API_KEY=your_claude_api_key_here" > .env
 
-# Run system
-uv run python main.py
-
-# Run tests  
-uv run python tests/test_reconciliation.py
+# Run reconciliation
+uv run streamlit run main.py
 ```
 
-## Requirements
+## 🏗️ Architecture
 
-- Python 3.11+
-- Anthropic API key (optional, for AI analysis)
-- Sample CSV files in `data/` directory
+**8 Specialized Agents** working sequentially to analyze dividend data:
 
-## Output
+1. **Data Detective** (CSV Data Parser & Matcher) - Parses CSVs and matches records by COAC_EVENT_KEY
+2. **Math Calculator** (Currency-Aware Amount Calculator) - Calculates differences preserving original currencies
+3. **Position Validator** - Verifies share quantities and identifies position mismatches
+4. **Tax Analyst** (Tax Rate Specialist) - Analyzes tax rates and identifies treaty opportunities
+5. **Securities Lending Checker** (Securities Lending Analyst) - Analyzes lending impact on tax efficiency
+6. **FX Validator** (FX Rate Validator) - Validates FX rates and detects pricing issues
+7. **Risk Prioritizer** (Risk Assessor) - Prioritizes discrepancies by financial impact
+8. **Report Writer** (Report Synthesizer) - Synthesizes all analyses into executive reports
 
-The system provides:
-- Detailed break detection results
-- Financial impact analysis
-- Risk classification by severity
-- AI-powered recommendations (when API key configured)
+## 📁 Project Structure
 
-This demonstrates how LLMs can transform financial operations through intelligent automation with appropriate safety controls.
+```
+src/crews/
+├── config/
+│   ├── agents.yaml    # Agent roles and personas
+│   └── tasks.yaml     # Task workflows (prompts)
+├── crew.py            # CrewAI orchestration
+└── main.py            # Entry point
+```
+
+## 📋 Deliverables
+
+✅ **Working Prototype** - Processes test data with LLM integration  
+✅ **Architecture Vision** - Scalable 8-agent system design  
+✅ **Analysis & Recommendations** - Risk assessment and recommendations
+
+See [architecture.md](architecture.md) and [analysis_and_recommendations.md](analysis_and_recommendations.md) for details.
+
+
+## 🔧 Configuration
+
+- **LLM**: Claude Sonnet 4.0
+
+---
